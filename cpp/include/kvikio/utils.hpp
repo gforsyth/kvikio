@@ -15,6 +15,7 @@
  */
 #pragma once
 
+#include <cassert>
 #include <chrono>
 #include <cstring>
 #include <future>
@@ -152,6 +153,7 @@ std::tuple<void*, std::size_t, std::size_t> get_alloc_info(const void* devPtr,
 template <typename T>
 bool is_future_done(const T& future)
 {
+  assert(future.valid());
   return future.wait_for(std::chrono::seconds(0)) != std::future_status::timeout;
 }
 

@@ -20,6 +20,7 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <optional>
 #include <stdexcept>
 #include <system_error>
 #include <utility>
@@ -33,8 +34,48 @@
 #include <kvikio/shim/cufile.hpp>
 #include <kvikio/stream.hpp>
 #include <kvikio/utils.hpp>
+#include "kvikio/shim/cufile_h_wrapper.hpp"
 
 namespace kvikio {
+
+/**
+ * @brief Class that provides RAII for file handling.
+ */
+class FileWrapper {
+ private:
+  int _fd{-1};
+
+ public:
+  FileWrapper(std::string const& file_path, std::string const& flags, bool o_direct, mode_t mode);
+  FileWrapper() = default;
+  ~FileWrapper() noexcept;
+  FileWrapper(FileWrapper const&)            = delete;
+  FileWrapper& operator=(FileWrapper const&) = delete;
+  FileWrapper(FileWrapper&& o) noexcept;
+  FileWrapper& operator=(FileWrapper&& o) noexcept;
+  void open(std::string const& file_path, std::string const& flags, bool o_direct, mode_t mode);
+  bool opened() noexcept;
+  void close() noexcept;
+  int fd() const noexcept;
+};
+
+class CUFileHandleWrapper {
+ private:
+  CUfileHandle_t _handle{};
+  bool _registered{false};
+
+ public:
+  CUFileHandleWrapper() = default;
+  ~CUFileHandleWrapper();
+  CUFileHandleWrapper(CUFileHandleWrapper const&)            = delete;
+  CUFileHandleWrapper& operator=(CUFileHandleWrapper const&) = delete;
+  CUFileHandleWrapper(CUFileHandleWrapper&& o) noexcept;
+  CUFileHandleWrapper& operator=(CUFileHandleWrapper&& o) noexcept;
+  std::optional<CUfileError_t> register_handle(const FileWrapper& file_wrapper);
+  bool registered() const noexcept;
+  CUfileHandle_t handle() const noexcept;
+  void unregister_handle() noexcept;
+};
 
 /**
  * @brief Handle of an open file registered with cufile.
@@ -44,14 +85,14 @@ namespace kvikio {
 class FileHandle {
  private:
   // We use two file descriptors, one opened with the O_DIRECT flag and one without.
-  int _fd_direct_on{-1};
-  int _fd_direct_off{-1};
+  FileWrapper _fd_direct_on;
+  FileWrapper _fd_direct_off;
   bool _initialized{false};
   CompatMode _compat_mode_requested{CompatMode::AUTO};
   bool _is_compat_mode_preferred{true};
   bool _is_compat_mode_preferred_for_async{true};
   mutable std::size_t _nbytes{0};  // The size of the underlying file, zero means unknown.
-  CUfileHandle_t _handle{};
+  CUFileHandleWrapper _handle{};
 
   /**
    * @brief Determine if the asynchronous I/O should be performed or not (throw exceptions)

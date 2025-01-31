@@ -451,11 +451,14 @@ void FileHandle::validate_compat_mode_for_async()
 {
   if (!is_compat_mode_preferred() && is_compat_mode_preferred_for_async() &&
       compat_mode_requested() == CompatMode::OFF) {
-    if (!is_stream_api_available()) { throw std::runtime_error("Missing the cuFile stream api."); }
+    std::string err_msg;
+    if (!is_stream_api_available()) { err_msg += "Missing the cuFile stream api."; }
 
     // When checking for availability, we also check if cuFile's config file exists. This is
     // because even when the stream API is available, it doesn't work if no config file exists.
-    if (config_path().empty()) { throw std::runtime_error("Missing cuFile configuration file."); }
+    if (config_path().empty()) { err_msg += " Missing cuFile configuration file."; }
+
+    throw std::runtime_error(err_msg);
   }
 }
 

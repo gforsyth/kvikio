@@ -46,19 +46,60 @@ class FileWrapper {
   int _fd{-1};
 
  public:
+  /**
+   * @brief Open file using `open(2)`.
+   *
+   * @param file_path File path.
+   * @param flags Open flags given as a string.
+   * @param o_direct Append O_DIRECT to `flags`.
+   * @param mode Access modes.
+   */
   FileWrapper(std::string const& file_path, std::string const& flags, bool o_direct, mode_t mode);
+
+  /**
+   * @brief Construct an empty file wrapper object without opening a file.
+   */
   FileWrapper() = default;
+
   ~FileWrapper() noexcept;
   FileWrapper(FileWrapper const&)            = delete;
   FileWrapper& operator=(FileWrapper const&) = delete;
   FileWrapper(FileWrapper&& o) noexcept;
   FileWrapper& operator=(FileWrapper&& o) noexcept;
+
+  /**
+   * @brief Open file using `open(2)`
+   *
+   * @param file_path File path.
+   * @param flags Open flags given as a string.
+   * @param o_direct Append O_DIRECT to `flags`.
+   * @param mode Access modes.
+   */
   void open(std::string const& file_path, std::string const& flags, bool o_direct, mode_t mode);
+
+  /**
+   * @brief Check if the file has been opened.
+   *
+   * @return A boolean answer indicating if the file has been opened.
+   */
   bool opened() noexcept;
+
+  /**
+   * @brief Close the file if it is opened; do nothing otherwise.
+   */
   void close() noexcept;
+
+  /**
+   * @brief Return the file descriptor.
+   *
+   * @return File descriptor.
+   */
   int fd() const noexcept;
 };
 
+/**
+ * @brief Class that provides RAII for the cuFile handle.
+ */
 class CUFileHandleWrapper {
  private:
   CUfileHandle_t _handle{};
@@ -71,9 +112,33 @@ class CUFileHandleWrapper {
   CUFileHandleWrapper& operator=(CUFileHandleWrapper const&) = delete;
   CUFileHandleWrapper(CUFileHandleWrapper&& o) noexcept;
   CUFileHandleWrapper& operator=(CUFileHandleWrapper&& o) noexcept;
-  std::optional<CUfileError_t> register_handle(FileWrapper const& file_wrapper);
+
+  /**
+   * @brief Register the file handle given the file descriptor.
+   *
+   * @param fd File descriptor.
+   * @return Return the cuFile error code from handle register. If the handle has already been
+   * registered by calling `register_handle()`, return `std::nullopt`.
+   */
+  std::optional<CUfileError_t> register_handle(int fd);
+
+  /**
+   * @brief Check if the handle has been registered.
+   *
+   * @return A boolean answer indicating if the handle has been registered.
+   */
   bool registered() const noexcept;
+
+  /**
+   * @brief Return the cuFile handle.
+   *
+   * @return The cuFile handle.
+   */
   CUfileHandle_t handle() const noexcept;
+
+  /**
+   * @brief Unregister the handle if it has been registered; do nothing otherwise.
+   */
   void unregister_handle() noexcept;
 };
 

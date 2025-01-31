@@ -144,7 +144,7 @@ FileHandle::FileHandle(std::string const& file_path,
 
   if (is_compat_mode_preferred()) { return; }
 
-  auto error_code = _handle.register_handle(_fd_direct_on);
+  auto error_code = _handle.register_handle(_fd_direct_on.fd());
   assert(error_code.has_value());
 
   // For the AUTO mode, if the first cuFile API call fails, fall back to the compatibility
@@ -519,7 +519,7 @@ CUFileHandleWrapper& CUFileHandleWrapper::operator=(CUFileHandleWrapper&& o) noe
   return *this;
 }
 
-std::optional<CUfileError_t> CUFileHandleWrapper::register_handle(FileWrapper const& file_wrapper)
+std::optional<CUfileError_t> CUFileHandleWrapper::register_handle(int fd)
 {
   std::optional<CUfileError_t> error_code;
   if (registered()) { return error_code; }
@@ -528,7 +528,7 @@ std::optional<CUfileError_t> CUFileHandleWrapper::register_handle(FileWrapper co
   CUfileDescr_t desc{};  // It is important to set to zero!
   desc.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-union-access)
-  desc.handle.fd = file_wrapper.fd();
+  desc.handle.fd = fd;
   error_code     = cuFileAPI::instance().HandleRegister(&_handle, &desc);
   if (error_code.value().err == CU_FILE_SUCCESS) { _registered = true; }
   return error_code;

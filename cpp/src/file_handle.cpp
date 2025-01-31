@@ -122,16 +122,18 @@ FileHandle::FileHandle(std::string const& file_path,
                        CompatMode compat_mode)
   : _fd_direct_off{open_fd(file_path, flags, false, mode)},
     _initialized{true},
-    _compat_mode{compat_mode}
+    _compat_mode_requested{compat_mode}
 {
+  _is_compat_mode_preferred = defaults::is_compat_mode_preferred(_compat_mode_requested);
+
   if (is_compat_mode_preferred()) {
     return;  // Nothing to do in compatibility mode
   }
 
   // Try to open the file with the O_DIRECT flag. Fall back to compatibility mode, if it fails.
   auto handle_o_direct_except = [this] {
-    if (_compat_mode == CompatMode::AUTO) {
-      _compat_mode = CompatMode::ON;
+    if (compat_mode_requested() == CompatMode::AUTO) {
+      _is_compat_mode_preferred = true;
     } else {  // CompatMode::OFF
       throw;
     }
@@ -145,7 +147,7 @@ FileHandle::FileHandle(std::string const& file_path,
     handle_o_direct_except();
   }
 
-  if (_compat_mode == CompatMode::ON) { return; }
+  if (is_compat_mode_preferred()) { return; }
 
   // Create a cuFile handle, if not in compatibility mode
   CUfileDescr_t desc{};  // It is important to set to zero!
@@ -156,18 +158,26 @@ FileHandle::FileHandle(std::string const& file_path,
   auto error_code = cuFileAPI::instance().HandleRegister(&_handle, &desc);
   // For the AUTO mode, if the first cuFile API call fails, fall back to the compatibility
   // mode.
-  if (_compat_mode == CompatMode::AUTO && error_code.err != CU_FILE_SUCCESS) {
-    _compat_mode = CompatMode::ON;
-  } else {
+  if (compat_mode_requested() == CompatMode::AUTO && error_code.err != CU_FILE_SUCCESS) {
+    _is_compat_mode_preferred = true;
+  } else {  // OFF mode
     CUFILE_TRY(error_code);
   }
+
+  // Check cuFile async API
+  static bool is_extra_symbol_available = is_stream_api_available();
+  static bool is_config_path_empty      = config_path().empty();
+  _is_compat_mode_preferred_for_async =
+    is_compat_mode_preferred() || !is_extra_symbol_available || is_config_path_empty;
 }
 
 FileHandle::FileHandle(FileHandle&& o) noexcept
   : _fd_direct_on{std::exchange(o._fd_direct_on, -1)},
     _fd_direct_off{std::exchange(o._fd_direct_off, -1)},
     _initialized{std::exchange(o._initialized, false)},
-    _compat_mode{std::exchange(o._compat_mode, CompatMode::AUTO)},
+    _compat_mode_requested{std::exchange(o._compat_mode_requested, CompatMode::AUTO)},
+    _is_compat_mode_preferred{std::exchange(o._is_compat_mode_preferred, true)},
+    _is_compat_mode_preferred_for_async{std::exchange(o._is_compat_mode_preferred_for_async, true)},
     _nbytes{std::exchange(o._nbytes, 0)},
     _handle{std::exchange(o._handle, CUfileHandle_t{})}
 {
@@ -175,12 +185,14 @@ FileHandle::FileHandle(FileHandle&& o) noexcept
 
 FileHandle& FileHandle::operator=(FileHandle&& o) noexcept
 {
-  _fd_direct_on  = std::exchange(o._fd_direct_on, -1);
-  _fd_direct_off = std::exchange(o._fd_direct_off, -1);
-  _initialized   = std::exchange(o._initialized, false);
-  _compat_mode   = std::exchange(o._compat_mode, CompatMode::AUTO);
-  _nbytes        = std::exchange(o._nbytes, 0);
-  _handle        = std::exchange(o._handle, CUfileHandle_t{});
+  _fd_direct_on                       = std::exchange(o._fd_direct_on, -1);
+  _fd_direct_off                      = std::exchange(o._fd_direct_off, -1);
+  _initialized                        = std::exchange(o._initialized, false);
+  _compat_mode_requested              = std::exchange(o._compat_mode_requested, CompatMode::AUTO);
+  _is_compat_mode_preferred           = std::exchange(o._is_compat_mode_preferred, true);
+  _is_compat_mode_preferred_for_async = std::exchange(o._is_compat_mode_preferred_for_async, true);
+  _nbytes                             = std::exchange(o._nbytes, 0);
+  _handle                             = std::exchange(o._handle, CUfileHandle_t{});
   return *this;
 }
 
@@ -194,7 +206,9 @@ void FileHandle::close() noexcept
     if (closed()) { return; }
 
     if (!is_compat_mode_preferred()) { cuFileAPI::instance().HandleDeregister(_handle); }
-    _compat_mode = CompatMode::AUTO;
+    _compat_mode_requested              = CompatMode::AUTO;
+    _is_compat_mode_preferred           = true;
+    _is_compat_mode_preferred_for_async = true;
     ::close(_fd_direct_off);
     if (_fd_direct_on != -1) { ::close(_fd_direct_on); }
     _fd_direct_on  = -1;
@@ -375,7 +389,8 @@ void FileHandle::read_async(void* devPtr_base,
                             ssize_t* bytes_read_p,
                             CUstream stream)
 {
-  if (is_compat_mode_preferred_for_async(_compat_mode)) {
+  validate_compat_mode_for_async();
+  if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_read_p =
       static_cast<ssize_t>(read(devPtr_base, *size_p, *file_offset_p, *devPtr_offset_p));
@@ -402,7 +417,8 @@ void FileHandle::write_async(void* devPtr_base,
                              ssize_t* bytes_written_p,
                              CUstream stream)
 {
-  if (is_compat_mode_preferred_for_async(_compat_mode)) {
+  validate_compat_mode_for_async();
+  if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_written_p =
       static_cast<ssize_t>(write(devPtr_base, *size_p, *file_offset_p, *devPtr_offset_p));
@@ -422,34 +438,25 @@ StreamFuture FileHandle::write_async(
   return ret;
 }
 
-bool FileHandle::is_compat_mode_preferred() const noexcept
-{
-  return defaults::is_compat_mode_preferred(_compat_mode);
-}
+CompatMode FileHandle::compat_mode_requested() const noexcept { return _compat_mode_requested; }
+
+bool FileHandle::is_compat_mode_preferred() const noexcept { return _is_compat_mode_preferred; }
 
 bool FileHandle::is_compat_mode_preferred_for_async() const noexcept
 {
-  static bool is_extra_symbol_available = is_stream_api_available();
-  static bool is_config_path_empty      = config_path().empty();
-  return is_compat_mode_preferred() || !is_extra_symbol_available || is_config_path_empty;
+  return _is_compat_mode_preferred_for_async;
 }
 
-bool FileHandle::is_compat_mode_preferred_for_async(CompatMode requested_compat_mode)
+void FileHandle::validate_compat_mode_for_async()
 {
-  if (defaults::is_compat_mode_preferred(requested_compat_mode)) { return true; }
+  if (!is_compat_mode_preferred() && is_compat_mode_preferred_for_async() &&
+      compat_mode_requested() == CompatMode::OFF) {
+    if (!is_stream_api_available()) { throw std::runtime_error("Missing the cuFile stream api."); }
 
-  if (!is_stream_api_available()) {
-    if (requested_compat_mode == CompatMode::AUTO) { return true; }
-    throw std::runtime_error("Missing the cuFile stream api.");
+    // When checking for availability, we also check if cuFile's config file exists. This is
+    // because even when the stream API is available, it doesn't work if no config file exists.
+    if (config_path().empty()) { throw std::runtime_error("Missing cuFile configuration file."); }
   }
-
-  // When checking for availability, we also check if cuFile's config file exists. This is
-  // because even when the stream API is available, it doesn't work if no config file exists.
-  if (config_path().empty()) {
-    if (requested_compat_mode == CompatMode::AUTO) { return true; }
-    throw std::runtime_error("Missing cuFile configuration file.");
-  }
-  return false;
 }
 
 }  // namespace kvikio

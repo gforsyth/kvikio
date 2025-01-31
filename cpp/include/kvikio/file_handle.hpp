@@ -71,7 +71,7 @@ class CUFileHandleWrapper {
   CUFileHandleWrapper& operator=(CUFileHandleWrapper const&) = delete;
   CUFileHandleWrapper(CUFileHandleWrapper&& o) noexcept;
   CUFileHandleWrapper& operator=(CUFileHandleWrapper&& o) noexcept;
-  std::optional<CUfileError_t> register_handle(const FileWrapper& file_wrapper);
+  std::optional<CUfileError_t> register_handle(FileWrapper const& file_wrapper);
   bool registered() const noexcept;
   CUfileHandle_t handle() const noexcept;
   void unregister_handle() noexcept;

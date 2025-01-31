@@ -519,7 +519,7 @@ CUFileHandleWrapper& CUFileHandleWrapper::operator=(CUFileHandleWrapper&& o) noe
   return *this;
 }
 
-std::optional<CUfileError_t> CUFileHandleWrapper::register_handle(const FileWrapper& file_wrapper)
+std::optional<CUfileError_t> CUFileHandleWrapper::register_handle(FileWrapper const& file_wrapper)
 {
   std::optional<CUfileError_t> error_code;
   if (registered()) { return error_code; }

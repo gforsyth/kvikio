@@ -150,8 +150,8 @@ class CUFileHandleWrapper {
 class FileHandle {
  private:
   // We use two file descriptors, one opened with the O_DIRECT flag and one without.
-  FileWrapper _fd_direct_on;
-  FileWrapper _fd_direct_off;
+  FileWrapper _fd_direct_on{};
+  FileWrapper _fd_direct_off{};
   bool _initialized{false};
   CompatMode _compat_mode_requested{CompatMode::AUTO};
   bool _is_compat_mode_preferred{true};

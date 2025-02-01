@@ -149,9 +149,9 @@ FileHandle::FileHandle(std::string const& file_path,
 
   // For the AUTO mode, if the first cuFile API call fails, fall back to the compatibility
   // mode.
-  if (compat_mode_requested() == CompatMode::AUTO && !_handle.registered()) {
+  if (compat_mode_requested() == CompatMode::AUTO && error_code.value().err != CU_FILE_SUCCESS) {
     _is_compat_mode_preferred = true;
-  } else {  // OFF mode
+  } else {
     CUFILE_TRY(error_code.value());
   }
 
@@ -502,10 +502,7 @@ void FileWrapper::close() noexcept
 
 int FileWrapper::fd() const noexcept { return _fd; }
 
-CUFileHandleWrapper::~CUFileHandleWrapper()
-{
-  if (_registered) { cuFileAPI::instance().HandleDeregister(_handle); }
-}
+CUFileHandleWrapper::~CUFileHandleWrapper() { unregister_handle(); }
 
 CUFileHandleWrapper::CUFileHandleWrapper(CUFileHandleWrapper&& o) noexcept
   : _handle{std::exchange(o._handle, {})}, _registered{std::exchange(o._registered, false)}
@@ -540,7 +537,10 @@ CUfileHandle_t CUFileHandleWrapper::handle() const noexcept { return _handle; }
 
 void CUFileHandleWrapper::unregister_handle() noexcept
 {
-  if (registered()) { cuFileAPI::instance().HandleDeregister(_handle); }
+  if (registered()) {
+    cuFileAPI::instance().HandleDeregister(_handle);
+    _registered = false;
+  }
 }
 
 }  // namespace kvikio

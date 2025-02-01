@@ -47,7 +47,7 @@ class FileWrapper {
 
  public:
   /**
-   * @brief Open file using `open(2)`.
+   * @brief Open file.
    *
    * @param file_path File path.
    * @param flags Open flags given as a string.

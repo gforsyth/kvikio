@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdlib>
 #include <sstream>
@@ -23,33 +22,11 @@
 
 #include <BS_thread_pool.hpp>
 
+#include <kvikio/compat_mode.hpp>
 #include <kvikio/defaults.hpp>
 #include <kvikio/shim/cufile.hpp>
 
 namespace kvikio {
-
-namespace detail {
-CompatMode parse_compat_mode_str(std::string_view compat_mode_str)
-{
-  // Convert to lowercase
-  std::string tmp{compat_mode_str};
-  std::transform(
-    tmp.begin(), tmp.end(), tmp.begin(), [](unsigned char c) { return std::tolower(c); });
-
-  CompatMode res{};
-  if (tmp == "on" || tmp == "true" || tmp == "yes" || tmp == "1") {
-    res = CompatMode::ON;
-  } else if (tmp == "off" || tmp == "false" || tmp == "no" || tmp == "0") {
-    res = CompatMode::OFF;
-  } else if (tmp == "auto") {
-    res = CompatMode::AUTO;
-  } else {
-    throw std::invalid_argument("Unknown compatibility mode: " + std::string{tmp});
-  }
-  return res;
-}
-
-}  // namespace detail
 
 template <>
 bool getenv_or(std::string_view env_var_name, bool default_val)
@@ -145,20 +122,12 @@ void defaults::compat_mode_reset(CompatMode compat_mode) { instance()->_compat_m
 
 CompatMode defaults::infer_compat_mode_if_auto(CompatMode compat_mode) noexcept
 {
-  if (compat_mode == CompatMode::AUTO) {
-    static auto inferred_compat_mode_for_auto = []() -> CompatMode {
-      return is_cufile_available() ? CompatMode::OFF : CompatMode::ON;
-    }();
-    return inferred_compat_mode_for_auto;
-  }
-  return compat_mode;
+  return _compat_mode_manager.infer_compat_mode_if_auto(compat_mode);
 }
 
 bool defaults::is_compat_mode_preferred(CompatMode compat_mode) noexcept
 {
-  return compat_mode == CompatMode::ON ||
-         (compat_mode == CompatMode::AUTO &&
-          defaults::infer_compat_mode_if_auto(compat_mode) == CompatMode::ON);
+  return _compat_mode_manager.is_compat_mode_preferred(compat_mode);
 }
 
 bool defaults::is_compat_mode_preferred() { return is_compat_mode_preferred(compat_mode()); }

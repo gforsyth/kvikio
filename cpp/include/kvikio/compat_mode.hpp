@@ -64,6 +64,15 @@ class CompatModeManager {
                                std::string const& flags,
                                mode_t mode,
                                CompatMode compat_mode);
+
+  /**
+   * @brief Determine if the asynchronous I/O should be performed or not (throw exceptions)
+   * according to `_compat_mode_requested`, `_is_compat_mode_preferred`, and
+   * `_is_compat_mode_preferred_for_async`.
+   */
+  void validate_compat_mode_for_async(bool is_compat_mode_preferred_v,
+                                      bool is_compat_mode_preferred_for_async,
+                                      CompatMode compat_mode_requested);
 };
 
 }  // namespace kvikio

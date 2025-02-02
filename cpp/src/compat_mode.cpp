@@ -120,4 +120,21 @@ CompatModeManager::resolve_compat_mode_for_file(std::string const& file_path,
           is_compat_mode_preferred_for_async};
 }
 
+void CompatModeManager::validate_compat_mode_for_async(bool is_compat_mode_preferred_v,
+                                                       bool is_compat_mode_preferred_for_async,
+                                                       CompatMode compat_mode_requested)
+{
+  if (!is_compat_mode_preferred_v && is_compat_mode_preferred_for_async &&
+      compat_mode_requested == CompatMode::OFF) {
+    std::string err_msg;
+    if (!is_stream_api_available()) { err_msg += "Missing the cuFile stream api."; }
+
+    // When checking for availability, we also check if cuFile's config file exists. This is
+    // because even when the stream API is available, it doesn't work if no config file exists.
+    if (config_path().empty()) { err_msg += " Missing cuFile configuration file."; }
+
+    throw std::runtime_error(err_msg);
+  }
+}
+
 }  // namespace kvikio

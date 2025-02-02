@@ -268,7 +268,8 @@ void FileHandle::read_async(void* devPtr_base,
                             ssize_t* bytes_read_p,
                             CUstream stream)
 {
-  validate_compat_mode_for_async();
+  compat_mode_manager.validate_compat_mode_for_async(
+    is_compat_mode_preferred(), is_compat_mode_preferred_for_async(), compat_mode_requested());
   if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_read_p =
@@ -296,7 +297,8 @@ void FileHandle::write_async(void* devPtr_base,
                              ssize_t* bytes_written_p,
                              CUstream stream)
 {
-  validate_compat_mode_for_async();
+  compat_mode_manager.validate_compat_mode_for_async(
+    is_compat_mode_preferred(), is_compat_mode_preferred_for_async(), compat_mode_requested());
   if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_written_p =
@@ -329,21 +331,6 @@ bool FileHandle::is_compat_mode_preferred() const noexcept { return _is_compat_m
 bool FileHandle::is_compat_mode_preferred_for_async() const noexcept
 {
   return _is_compat_mode_preferred_for_async;
-}
-
-void FileHandle::validate_compat_mode_for_async()
-{
-  if (!is_compat_mode_preferred() && is_compat_mode_preferred_for_async() &&
-      compat_mode_requested() == CompatMode::OFF) {
-    std::string err_msg;
-    if (!is_stream_api_available()) { err_msg += "Missing the cuFile stream api."; }
-
-    // When checking for availability, we also check if cuFile's config file exists. This is
-    // because even when the stream API is available, it doesn't work if no config file exists.
-    if (config_path().empty()) { err_msg += " Missing cuFile configuration file."; }
-
-    throw std::runtime_error(err_msg);
-  }
 }
 
 }  // namespace kvikio

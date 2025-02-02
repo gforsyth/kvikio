@@ -56,13 +56,6 @@ class FileHandle {
   CUFileHandleWrapper _handle{};
   inline static CompatModeManager compat_mode_manager{};
 
-  /**
-   * @brief Determine if the asynchronous I/O should be performed or not (throw exceptions)
-   * according to `_compat_mode_requested`, `_is_compat_mode_preferred`, and
-   * `_is_compat_mode_preferred_for_async`.
-   */
-  void validate_compat_mode_for_async();
-
  public:
   static constexpr mode_t m644 = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;
   FileHandle() noexcept        = default;

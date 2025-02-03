@@ -66,7 +66,8 @@ CompatModeManager& CompatModeManager::operator=(CompatModeManager&& o) noexcept
 
 void CompatModeManager::compat_mode_reset(CompatMode compat_mode_requested)
 {
-  _compat_mode_requested = compat_mode_requested;
+  _compat_mode_requested    = compat_mode_requested;
+  _is_compat_mode_preferred = (infer_compat_mode_if_auto(_compat_mode_requested) == CompatMode::ON);
 }
 
 CompatMode CompatModeManager::infer_compat_mode_if_auto(CompatMode compat_mode) noexcept

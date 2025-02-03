@@ -18,7 +18,7 @@
 #include <optional>
 #include <string>
 
-#include "kvikio/shim/cufile_h_wrapper.hpp"
+#include <kvikio/shim/cufile_h_wrapper.hpp>
 
 namespace kvikio {
 /**

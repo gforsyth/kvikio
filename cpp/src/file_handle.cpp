@@ -23,10 +23,10 @@
 #include <stdexcept>
 #include <utility>
 
+#include <kvikio/compat_mode.hpp>
 #include <kvikio/defaults.hpp>
 #include <kvikio/file_handle.hpp>
 #include <kvikio/file_utils.hpp>
-#include "kvikio/compat_mode.hpp"
 
 namespace kvikio {
 
@@ -34,38 +34,30 @@ FileHandle::FileHandle(std::string const& file_path,
                        std::string const& flags,
                        mode_t mode,
                        CompatMode compat_mode)
-  : _initialized{true}, _compat_mode_requested{compat_mode}
+  : _initialized{true}
 {
-  std::tie(_fd_direct_off,
-           _fd_direct_on,
-           _handle,
-           _is_compat_mode_preferred,
-           _is_compat_mode_preferred_for_async) =
-    compat_mode_manager.resolve_compat_mode_for_file(file_path, flags, mode, compat_mode);
+  std::tie(_fd_direct_off, _fd_direct_on, _handle) =
+    _compat_mode_manager.resolve_compat_mode_for_file(file_path, flags, mode, compat_mode);
 }
 
 FileHandle::FileHandle(FileHandle&& o) noexcept
   : _fd_direct_on{std::exchange(o._fd_direct_on, {})},
     _fd_direct_off{std::exchange(o._fd_direct_off, {})},
     _initialized{std::exchange(o._initialized, false)},
-    _compat_mode_requested{std::exchange(o._compat_mode_requested, CompatMode::AUTO)},
-    _is_compat_mode_preferred{std::exchange(o._is_compat_mode_preferred, true)},
-    _is_compat_mode_preferred_for_async{std::exchange(o._is_compat_mode_preferred_for_async, true)},
     _nbytes{std::exchange(o._nbytes, 0)},
-    _handle{std::exchange(o._handle, {})}
+    _handle{std::exchange(o._handle, {})},
+    _compat_mode_manager{std::exchange(o._compat_mode_manager, {})}
 {
 }
 
 FileHandle& FileHandle::operator=(FileHandle&& o) noexcept
 {
-  _fd_direct_on                       = std::exchange(o._fd_direct_on, {});
-  _fd_direct_off                      = std::exchange(o._fd_direct_off, {});
-  _initialized                        = std::exchange(o._initialized, false);
-  _compat_mode_requested              = std::exchange(o._compat_mode_requested, CompatMode::AUTO);
-  _is_compat_mode_preferred           = std::exchange(o._is_compat_mode_preferred, true);
-  _is_compat_mode_preferred_for_async = std::exchange(o._is_compat_mode_preferred_for_async, true);
-  _nbytes                             = std::exchange(o._nbytes, 0);
-  _handle                             = std::exchange(o._handle, {});
+  _fd_direct_on        = std::exchange(o._fd_direct_on, {});
+  _fd_direct_off       = std::exchange(o._fd_direct_off, {});
+  _initialized         = std::exchange(o._initialized, false);
+  _nbytes              = std::exchange(o._nbytes, 0);
+  _handle              = std::exchange(o._handle, {});
+  _compat_mode_manager = std::exchange(o._compat_mode_manager, {});
   return *this;
 }
 
@@ -78,13 +70,11 @@ void FileHandle::close() noexcept
   try {
     if (closed()) { return; }
     _handle.unregister_handle();
-    _compat_mode_requested              = CompatMode::AUTO;
-    _is_compat_mode_preferred           = true;
-    _is_compat_mode_preferred_for_async = true;
     _fd_direct_off.close();
     _fd_direct_on.close();
-    _nbytes      = 0;
-    _initialized = false;
+    _nbytes              = 0;
+    _initialized         = false;
+    _compat_mode_manager = {};
   } catch (...) {
   }
 }
@@ -268,8 +258,7 @@ void FileHandle::read_async(void* devPtr_base,
                             ssize_t* bytes_read_p,
                             CUstream stream)
 {
-  compat_mode_manager.validate_compat_mode_for_async(
-    is_compat_mode_preferred(), is_compat_mode_preferred_for_async(), compat_mode_requested());
+  _compat_mode_manager.validate_compat_mode_for_async();
   if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_read_p =
@@ -297,8 +286,7 @@ void FileHandle::write_async(void* devPtr_base,
                              ssize_t* bytes_written_p,
                              CUstream stream)
 {
-  compat_mode_manager.validate_compat_mode_for_async(
-    is_compat_mode_preferred(), is_compat_mode_preferred_for_async(), compat_mode_requested());
+  _compat_mode_manager.validate_compat_mode_for_async();
   if (is_compat_mode_preferred_for_async()) {
     CUDA_DRIVER_TRY(cudaAPI::instance().StreamSynchronize(stream));
     *bytes_written_p =
@@ -324,13 +312,19 @@ StreamFuture FileHandle::write_async(
   return ret;
 }
 
-CompatMode FileHandle::compat_mode_requested() const noexcept { return _compat_mode_requested; }
+CompatMode FileHandle::compat_mode_requested() const noexcept
+{
+  return _compat_mode_manager.compat_mode_requested();
+}
 
-bool FileHandle::is_compat_mode_preferred() const noexcept { return _is_compat_mode_preferred; }
+bool FileHandle::is_compat_mode_preferred() const noexcept
+{
+  return _compat_mode_manager.is_compat_mode_preferred();
+}
 
 bool FileHandle::is_compat_mode_preferred_for_async() const noexcept
 {
-  return _is_compat_mode_preferred_for_async;
+  return _compat_mode_manager.is_compat_mode_preferred_for_async();
 }
 
 }  // namespace kvikio

@@ -32,9 +32,9 @@
 #include <kvikio/parallel_operation.hpp>
 #include <kvikio/posix_io.hpp>
 #include <kvikio/shim/cufile.hpp>
+#include <kvikio/shim/cufile_h_wrapper.hpp>
 #include <kvikio/stream.hpp>
 #include <kvikio/utils.hpp>
-#include "kvikio/shim/cufile_h_wrapper.hpp"
 
 namespace kvikio {
 
@@ -49,12 +49,10 @@ class FileHandle {
   FileWrapper _fd_direct_on{};
   FileWrapper _fd_direct_off{};
   bool _initialized{false};
-  CompatMode _compat_mode_requested{CompatMode::AUTO};
-  bool _is_compat_mode_preferred{true};
-  bool _is_compat_mode_preferred_for_async{true};
+
   mutable std::size_t _nbytes{0};  // The size of the underlying file, zero means unknown.
   CUFileHandleWrapper _handle{};
-  inline static CompatModeManager compat_mode_manager{};
+  CompatModeManager _compat_mode_manager{};
 
  public:
   static constexpr mode_t m644 = S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH;

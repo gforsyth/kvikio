@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cassert>
 #include <stdexcept>
+#include <utility>
 
 #include <kvikio/compat_mode.hpp>
 #include <kvikio/cufile/config.hpp>
@@ -48,6 +49,26 @@ CompatMode parse_compat_mode_str(std::string_view compat_mode_str)
 
 }  // namespace detail
 
+CompatModeManager::CompatModeManager(CompatModeManager&& o) noexcept
+  : _compat_mode_requested{std::exchange(o._compat_mode_requested, CompatMode::AUTO)},
+    _is_compat_mode_preferred{std::exchange(o._is_compat_mode_preferred, true)},
+    _is_compat_mode_preferred_for_async{std::exchange(o._is_compat_mode_preferred_for_async, true)}
+{
+}
+
+CompatModeManager& CompatModeManager::operator=(CompatModeManager&& o) noexcept
+{
+  _compat_mode_requested              = std::exchange(o._compat_mode_requested, CompatMode::AUTO);
+  _is_compat_mode_preferred           = std::exchange(o._is_compat_mode_preferred, true);
+  _is_compat_mode_preferred_for_async = std::exchange(o._is_compat_mode_preferred_for_async, true);
+  return *this;
+}
+
+void CompatModeManager::compat_mode_reset(CompatMode compat_mode_requested)
+{
+  _compat_mode_requested = compat_mode_requested;
+}
+
 CompatMode CompatModeManager::infer_compat_mode_if_auto(CompatMode compat_mode) noexcept
 {
   if (compat_mode == CompatMode::AUTO) {
@@ -66,18 +87,33 @@ bool CompatModeManager::is_compat_mode_preferred(CompatMode compat_mode) noexcep
           infer_compat_mode_if_auto(compat_mode) == CompatMode::ON);
 }
 
-std::tuple<FileWrapper, FileWrapper, CUFileHandleWrapper, bool, bool>
+bool CompatModeManager::is_compat_mode_preferred() const noexcept
+{
+  return _is_compat_mode_preferred;
+}
+
+bool CompatModeManager::is_compat_mode_preferred_for_async() const noexcept
+{
+  return _is_compat_mode_preferred_for_async;
+}
+
+CompatMode CompatModeManager::compat_mode_requested() const noexcept
+{
+  return _compat_mode_requested;
+}
+
+std::tuple<FileWrapper, FileWrapper, CUFileHandleWrapper>
 CompatModeManager::resolve_compat_mode_for_file(std::string const& file_path,
                                                 std::string const& flags,
                                                 mode_t mode,
                                                 CompatMode compat_mode_requested_v)
 {
   FileWrapper file_direct_off{file_path, flags, false, mode};
-  bool is_compat_mode_preferred_v = is_compat_mode_preferred(compat_mode_requested_v);
+  _is_compat_mode_preferred = is_compat_mode_preferred(compat_mode_requested_v);
 
   // Nothing to do in compatibility mode
-  if (is_compat_mode_preferred_v) {
-    return {std::move(file_direct_off), FileWrapper{}, CUFileHandleWrapper{}, true, true};
+  if (_is_compat_mode_preferred) {
+    return {std::move(file_direct_off), FileWrapper{}, CUFileHandleWrapper{}};
   }
 
   FileWrapper file_direct_on{};
@@ -86,14 +122,14 @@ CompatModeManager::resolve_compat_mode_for_file(std::string const& file_path,
   } catch (...) {
     // Try to open the file with the O_DIRECT flag. Fall back to compatibility mode, if it fails.
     if (compat_mode_requested_v == CompatMode::AUTO) {
-      is_compat_mode_preferred_v = true;
+      _is_compat_mode_preferred = true;
     } else {  // CompatMode::OFF
       throw;
     }
   }
 
-  if (is_compat_mode_preferred_v) {
-    return {std::move(file_direct_off), FileWrapper{}, CUFileHandleWrapper{}, true, true};
+  if (_is_compat_mode_preferred) {
+    return {std::move(file_direct_off), FileWrapper{}, CUFileHandleWrapper{}};
   }
 
   CUFileHandleWrapper handle;
@@ -103,7 +139,7 @@ CompatModeManager::resolve_compat_mode_for_file(std::string const& file_path,
   // For the AUTO mode, if the first cuFile API call fails, fall back to the compatibility
   // mode.
   if (compat_mode_requested_v == CompatMode::AUTO && error_code.value().err != CU_FILE_SUCCESS) {
-    is_compat_mode_preferred_v = true;
+    _is_compat_mode_preferred = true;
   } else {
     CUFILE_TRY(error_code.value());
   }
@@ -111,21 +147,15 @@ CompatModeManager::resolve_compat_mode_for_file(std::string const& file_path,
   // Check cuFile async API
   static bool is_extra_symbol_available = is_stream_api_available();
   static bool is_config_path_empty      = config_path().empty();
-  bool is_compat_mode_preferred_for_async =
-    is_compat_mode_preferred_v || !is_extra_symbol_available || is_config_path_empty;
-  return {std::move(file_direct_off),
-          std::move(file_direct_on),
-          std::move(handle),
-          is_compat_mode_preferred_v,
-          is_compat_mode_preferred_for_async};
+  _is_compat_mode_preferred_for_async =
+    _is_compat_mode_preferred || !is_extra_symbol_available || is_config_path_empty;
+  return {std::move(file_direct_off), std::move(file_direct_on), std::move(handle)};
 }
 
-void CompatModeManager::validate_compat_mode_for_async(bool is_compat_mode_preferred_v,
-                                                       bool is_compat_mode_preferred_for_async,
-                                                       CompatMode compat_mode_requested)
+void CompatModeManager::validate_compat_mode_for_async()
 {
-  if (!is_compat_mode_preferred_v && is_compat_mode_preferred_for_async &&
-      compat_mode_requested == CompatMode::OFF) {
+  if (!_is_compat_mode_preferred && _is_compat_mode_preferred_for_async &&
+      _compat_mode_requested == CompatMode::OFF) {
     std::string err_msg;
     if (!is_stream_api_available()) { err_msg += "Missing the cuFile stream api."; }
 
